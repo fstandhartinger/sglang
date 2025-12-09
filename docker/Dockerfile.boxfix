@@ -1,0 +1,3 @@
+FROM chutes/sglang:nightly-2025120804
+
+COPY python/sglang/srt/entrypoints/openai/serving_chat.py /opt/sglang/python/sglang/srt/entrypoints/openai/serving_chat.py

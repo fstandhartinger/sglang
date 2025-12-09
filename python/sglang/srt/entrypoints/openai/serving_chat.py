@@ -53,6 +53,12 @@ from sglang.utils import convert_json_schema_to_str
 logger = logging.getLogger(__name__)
 
 
+def _strip_box_markers(text: Any) -> Any:
+    if isinstance(text, str):
+        return text.replace("<|begin_of_box|>", "").replace("<|end_of_box|>", "")
+    return text
+
+
 class OpenAIServingChat(OpenAIServingBase):
     """Handler for /v1/chat/completions requests"""
 
@@ -526,7 +532,9 @@ class OpenAIServingChat(OpenAIServingBase):
                     if is_analysis:
                         choice_data = ChatCompletionResponseStreamChoice(
                             index=index,
-                            delta=DeltaMessage(reasoning_content=delta),
+                            delta=DeltaMessage(
+                                reasoning_content=_strip_box_markers(delta)
+                            ),
                             finish_reason=None,
                         )
                         chunk = ChatCompletionStreamResponse(
@@ -540,7 +548,9 @@ class OpenAIServingChat(OpenAIServingBase):
 
                     choice_data = ChatCompletionResponseStreamChoice(
                         index=index,
-                        delta=DeltaMessage(content=delta if delta else None),
+                        delta=DeltaMessage(
+                            content=_strip_box_markers(delta) if delta else None
+                        ),
                         finish_reason=None,
                         matched_stop=None,
                         logprobs=choice_logprobs,
@@ -555,7 +565,7 @@ class OpenAIServingChat(OpenAIServingBase):
                     continue
                 else:
                     stream_buffer = stream_buffers.get(index, "")
-                    delta = content["text"][len(stream_buffer) :]
+                    delta = _strip_box_markers(content["text"][len(stream_buffer) :])
                     stream_buffers[index] = stream_buffer + delta
 
                 # Handle reasoning content
@@ -570,7 +580,9 @@ class OpenAIServingChat(OpenAIServingBase):
                     if reasoning_text:
                         choice_data = ChatCompletionResponseStreamChoice(
                             index=index,
-                            delta=DeltaMessage(reasoning_content=reasoning_text),
+                            delta=DeltaMessage(
+                                reasoning_content=_strip_box_markers(reasoning_text)
+                            ),
                             finish_reason=None,
                         )
                         chunk = ChatCompletionStreamResponse(
@@ -584,7 +596,7 @@ class OpenAIServingChat(OpenAIServingBase):
                 if self.use_harmony and not is_final:
                     choice_data = ChatCompletionResponseStreamChoice(
                         index=index,
-                        delta=DeltaMessage(reasoning_content=delta),
+                        delta=DeltaMessage(reasoning_content=_strip_box_markers(delta)),
                         finish_reason=None,
                     )
                     chunk = ChatCompletionStreamResponse(
@@ -627,7 +639,7 @@ class OpenAIServingChat(OpenAIServingBase):
                     if delta:
                         choice_data = ChatCompletionResponseStreamChoice(
                             index=index,
-                            delta=DeltaMessage(content=delta),
+                            delta=DeltaMessage(content=_strip_box_markers(delta)),
                             finish_reason=None,
                             matched_stop=None,
                             logprobs=choice_logprobs,
@@ -773,13 +785,15 @@ class OpenAIServingChat(OpenAIServingBase):
                 if len(output_msgs) == 0:
                     # The generation has stopped during reasoning.
                     is_tool_call = False
-                    reasoning_content = parser.current_content
+                    reasoning_content = _strip_box_markers(parser.current_content)
                     final_content = None
                 elif len(output_msgs) == 1:
                     # The generation has stopped during final message.
                     is_tool_call = False
-                    reasoning_content = output_msgs[0].content[0].text
-                    final_content = parser.current_content
+                    reasoning_content = _strip_box_markers(
+                        output_msgs[0].content[0].text
+                    )
+                    final_content = _strip_box_markers(parser.current_content)
                 else:
                     if len(output_msgs) != 2:
                         raise ValueError(
@@ -787,8 +801,10 @@ class OpenAIServingChat(OpenAIServingBase):
                             f"but got {len(output_msgs)}."
                         )
                     reasoning_msg, final_msg = output_msgs
-                    reasoning_content = reasoning_msg.content[0].text
-                    final_content = final_msg.content[0].text
+                    reasoning_content = _strip_box_markers(
+                        reasoning_msg.content[0].text
+                    )
+                    final_content = _strip_box_markers(final_msg.content[0].text)
                     is_tool_call = final_msg.recipient is not None
 
                 if is_tool_call:
@@ -847,6 +863,8 @@ class OpenAIServingChat(OpenAIServingBase):
                         force_reasoning=self.template_manager.force_reasoning,
                     )
                     reasoning_text, text = parser.parse_non_stream(text)
+                    reasoning_text = _strip_box_markers(reasoning_text)
+                    text = _strip_box_markers(text)
                 except Exception as e:
                     logger.error(f"Reasoning parsing error: {e}")
                     return self.create_error_response(
@@ -867,9 +885,11 @@ class OpenAIServingChat(OpenAIServingBase):
                 index=idx,
                 message=ChatMessage(
                     role="assistant",
-                    content=text if text else None,
+                    content=_strip_box_markers(text) if text else None,
                     tool_calls=tool_calls,
-                    reasoning_content=reasoning_text if reasoning_text else None,
+                    reasoning_content=(
+                        _strip_box_markers(reasoning_text) if reasoning_text else None
+                    ),
                 ),
                 logprobs=choice_logprobs,
                 finish_reason=finish_reason["type"] if finish_reason else None,
